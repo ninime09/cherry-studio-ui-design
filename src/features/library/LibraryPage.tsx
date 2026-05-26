@@ -20,13 +20,13 @@ import {
 import { Switch } from '@cherry-studio/ui';
 import { Combobox } from '@cherrystudio/ui/components/primitives/combobox';
 import { Field, FieldContent, FieldLabel } from '@cherrystudio/ui/components/primitives/field';
-import { ConfirmDialog } from '@cherrystudio/ui/components/composites/ConfirmDialog';
 import { Input, SearchInput, Typography, SYSTEM_VARIABLES, type VariableDef } from '@cherry-studio/ui';
 import { skills as discoverSkills, assistants as discoverAssistants } from '@/features/explore/ExploreData';
 import { useGlobalActions } from '@/app/context/GlobalActionContext';
 import type { ResourceItem, FolderNode, TagItem, LibrarySidebarFilter, LibraryConfigView, ResourceType } from '@/app/types';
 import type { ViewMode, SortKey } from '@/app/types';
 import { MOCK_RESOURCES, MOCK_FOLDERS, TAG_COLORS, DEFAULT_TAG_COLOR, RESOURCE_TYPE_CONFIG } from '@/app/config/constants';
+import { getUserSkills, useUserSkills } from '@/app/stores/userSkillsStore';
 import { LibrarySidebar } from './LibrarySidebar';
 import { ResourceGrid } from './ResourceGrid';
 import { ImportModal } from './ImportModal';
@@ -34,6 +34,8 @@ import { SkillPluginImportModal } from './SkillPluginImportModal';
 import { SkillPluginDetail } from './SkillPluginDetail';
 import { AssistantConfig } from '@/features/assistant/AssistantConfig';
 import { AgentConfig } from '@/features/agent/AgentConfig';
+import { useRecycleBin, type RecycleBinItemType } from '@/app/context/RecycleBinContext';
+import { RecycleBinConfirmDialog } from '@/app/components/shared/RecycleBinConfirmDialog';
 
 // ===========================
 // Template Banner (shown at top for assistant / skill views)
@@ -370,7 +372,6 @@ function PromptEditPage({ resource, onBack, onSave, inModal = false }: {
   const [tags, setTags] = useState<string[]>(resource.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [showVarPanel, setShowVarPanel] = useState(false);
-  const [activeSection, setActiveSection] = useState<'basic' | 'content'>('basic');
 
   const vars = extractVars(content);
   const tagsChanged = tags.join('|') !== (resource.tags || []).join('|');
@@ -396,20 +397,21 @@ function PromptEditPage({ resource, onBack, onSave, inModal = false }: {
 
   // ── Section bodies, reused below ──────────────────────────────
   const BasicSection = (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold text-foreground mb-1">基础信息</h3>
-      <Field>
-        <FieldLabel>名称</FieldLabel>
-        <FieldContent>
-          <Input value={name} onChange={e => setName(e.target.value)}
-            className="w-full bg-muted/30 border border-border/40 px-3.5 py-2.5 text-sm text-foreground rounded-xl"
-            placeholder="Prompt 名称" />
-        </FieldContent>
-      </Field>
-      <Field>
-        <FieldLabel>标签</FieldLabel>
-        <FieldContent>
-          <Combobox
+    <div className="space-y-5">
+      <Typography variant="subtitle">基础信息</Typography>
+      <div className="grid grid-cols-[1fr_220px] gap-3">
+        <Field>
+          <FieldLabel>名称</FieldLabel>
+          <FieldContent>
+            <Input value={name} onChange={e => setName(e.target.value)}
+              className="h-8 text-sm"
+              placeholder="Prompt 名称" />
+          </FieldContent>
+        </Field>
+        <Field>
+          <FieldLabel>标签</FieldLabel>
+          <FieldContent>
+            <Combobox
             multiple
             searchable
             value={tags}
@@ -447,16 +449,17 @@ function PromptEditPage({ resource, onBack, onSave, inModal = false }: {
                 </div>
               );
             }}
-          />
-        </FieldContent>
-      </Field>
+            />
+          </FieldContent>
+        </Field>
+      </div>
     </div>
   );
   const ContentSection = (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted-foreground/60 font-medium">内容</p>
+          <Typography variant="subtitle">内容</Typography>
           <Popover open={showVarPanel} onOpenChange={setShowVarPanel}>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="xs"
@@ -494,32 +497,10 @@ function PromptEditPage({ resource, onBack, onSave, inModal = false }: {
 
   if (inModal) {
     return (
-      <div className="flex-1 flex min-h-0">
-        <aside className="w-[132px] flex-shrink-0 border-r border-border/15 p-2 space-y-0.5">
-          {([
-            { id: 'basic', label: '基础信息' },
-            { id: 'content', label: '内容' },
-          ] as const).map(s => {
-            const active = activeSection === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveSection(s.id)}
-                className={`w-full flex items-center justify-start px-2.5 py-2 rounded-lg text-sm text-left transition-colors ${
-                  active
-                    ? 'bg-accent/50 text-foreground'
-                    : 'text-muted-foreground/75 hover:text-foreground hover:bg-muted/40'
-                }`}
-              >
-                {s.label}
-              </button>
-            );
-          })}
-        </aside>
-        <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin px-5 py-4">
-          {activeSection === 'basic' ? BasicSection : ContentSection}
-        </div>
+      <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin px-5 py-4 space-y-6">
+        {/* Single-page layout — basic info, then content. */}
+        {BasicSection}
+        {ContentSection}
       </div>
     );
   }
@@ -644,7 +625,21 @@ function deleteFolderFromTree(nodes: FolderNode[], id: string): FolderNode[] {
 
 export function LibraryPage() {
   const { libraryEditResourceId: initialEditResourceId, libraryCreateType: initialCreateType, libraryReturn: onReturn } = useGlobalActions();
-  const [resources, setResources] = useState<ResourceItem[]>(() => MOCK_RESOURCES.filter(r => r.type !== 'plugin'));
+  const userSkills = useUserSkills();
+  const [resources, setResources] = useState<ResourceItem[]>(() => {
+    const seed = MOCK_RESOURCES.filter(r => r.type !== 'plugin');
+    return [...getUserSkills(), ...seed];
+  });
+
+  // Merge in any user skills created while the library was unmounted
+  // (e.g. via the agent's "保存为 Skill" flow). De-dupes by id.
+  useEffect(() => {
+    setResources(prev => {
+      const known = new Set(prev.map(r => r.id));
+      const newOnes = userSkills.filter(s => !known.has(s.id));
+      return newOnes.length === 0 ? prev : [...newOnes, ...prev];
+    });
+  }, [userSkills]);
   const [folders, setFolders] = useState<FolderNode[]>(MOCK_FOLDERS);
 
   const [configView, setConfigView] = useState<LibraryConfigView>({ type: 'list' });
@@ -822,15 +817,44 @@ export function LibraryPage() {
     setResources(prev => [{ ...r, id: `res-dup-${Date.now()}`, name: `${r.name} (副本)`, createdAt: now, updatedAt: now }, ...prev]);
   }, []);
 
+  const { moveToBin: moveToRecycleBin, retentionDays: recycleRetentionDays } = useRecycleBin();
+
+  const resourceTypeToBinType = (t: ResourceType): RecycleBinItemType | null => {
+    if (t === 'agent') return 'agent';
+    if (t === 'assistant') return 'assistant';
+    if (t === 'skill') return 'skill';
+    if (t === 'prompt') return 'prompt';
+    // 'plugin' is a legacy ResourceType not exposed in the new product —
+    // it just gets hard-deleted without recycle bin entry.
+    return null;
+  };
+
   const handleDelete = useCallback((r: ResourceItem) => setDeleteConfirm(r), []);
 
   const confirmDelete = useCallback(() => {
-    if (deleteConfirm) {
-      setResources(prev => prev.filter(x => x.id !== deleteConfirm.id));
-      setDeleteConfirm(null);
-      if (configView.type !== 'list') setConfigView({ type: 'list' });
+    if (!deleteConfirm) return;
+    const r = deleteConfirm;
+    setResources(prev => prev.filter(x => x.id !== r.id));
+    setDeleteConfirm(null);
+    if (configView.type !== 'list') setConfigView({ type: 'list' });
+
+    const binType = resourceTypeToBinType(r.type);
+    if (binType) {
+      moveToRecycleBin(
+        {
+          id: `bin-${binType}-${r.id}-${Date.now()}`,
+          type: binType,
+          name: r.name,
+          icon: r.avatar,
+          meta: r.author ?? '资源库',
+          source: 'manual',
+        },
+        {
+          onUndo: () => setResources(prev => [r, ...prev]),
+        },
+      );
     }
-  }, [deleteConfirm, configView]);
+  }, [deleteConfirm, configView, moveToRecycleBin]);
 
   const handleToggle = useCallback((id: string) => {
     setResources(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
@@ -956,15 +980,12 @@ export function LibraryPage() {
         onClose={() => setSpImportOpen(false)} onImportComplete={handleImportComplete}
       />
 
-      <ConfirmDialog
+      {/* Move-to-recycle-bin confirm — iOS-style minimal alert. */}
+      <RecycleBinConfirmDialog
         open={!!deleteConfirm}
-        onOpenChange={v => { if (!v) setDeleteConfirm(null); }}
-        title="确认删除"
-        description={deleteConfirm ? `确定要删除「${deleteConfirm.name}」吗？此操作无法撤销。` : ''}
-        confirmText="删除"
-        cancelText="取消"
-        destructive
-        onConfirm={confirmDelete}
+        onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}
+        retentionDays={recycleRetentionDays}
+        onConfirm={() => confirmDelete()}
       />
 
       {/* Resource config modal — sized to sit inside the app shell

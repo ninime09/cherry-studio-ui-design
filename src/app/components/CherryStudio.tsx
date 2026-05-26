@@ -11,11 +11,35 @@ import {
   searchFilterTabs, searchRecentItems, searchFileItems, searchQuickActions,
   MOCK_RESOURCES,
 } from '@/app/config/constants';
+import { AVAILABLE_AGENTS } from '@/app/config/agentTools';
+
+// User-created agents appear as additional launcher tiles in the
+// NewTabDialog grid. We map the emoji avatar to a tiny inline component
+// so it satisfies AppIconItem.icon (React.ElementType) without changing
+// the dialog's render contract.
+function makeEmojiIcon(emoji: string): React.ElementType {
+  const C: React.FC = () => <span className="text-[16px] leading-none">{emoji}</span>;
+  C.displayName = `EmojiIcon(${emoji})`;
+  return C;
+}
+
+const dialogAppIconsWithAgents = [
+  ...dialogAppIcons,
+  ...AVAILABLE_AGENTS.map(a => ({
+    id: `agent:${a.id}`,
+    label: a.name,
+    icon: makeEmojiIcon(a.avatar),
+    color: 'text-foreground',
+    bg: 'bg-accent/40',
+  })),
+];
 import type { Tab, MenuItem, ContextMenuState } from '@/app/types';
 import { SettingsPage } from '@/features/settings/SettingsPage';
 import { SettingsProvider, useSettings } from '@/app/context/SettingsContext';
 import { GlobalActionProvider } from '@/app/context/GlobalActionContext';
 import type { GlobalActions } from '@/app/context/GlobalActionContext';
+import { RecycleBinProvider } from '@/app/context/RecycleBinContext';
+import { ArchiveProvider } from '@/app/context/ArchiveContext';
 import { Toaster } from 'sonner';
 import { DataMigrationOverlay } from './DataMigrationOverlay';
 import { initGlobalErrorHandler } from '@/app/services/errorHandler';
@@ -39,8 +63,13 @@ function CherryStudioInner() {
   const [newTabSearch, setNewTabSearch] = useState('');
   const [newTabManageMode, setNewTabManageMode] = useState(false);
   const [searchDialogOpen, setSearchDialogOpen] = useState(false);
-  const [hiddenApps, setHiddenApps] = useState<Set<string>>(new Set(['explore', 'library', 'knowledge', 'file', 'code', 'note', 'extensions']));
-  const [appOrder, setAppOrder] = useState<string[]>(() => dialogAppIcons.map(a => a.id));
+  // Library is intentionally NOT hidden — it's now the home of custom
+  // resource management (assistants / agents / skills / prompts / etc.)
+  // after main moved "管理我的资源" out of the Market page. Without a
+  // visible Library entry in the sidebar, users have no way to reach
+  // their resources and the recycle-bin delete flow is unreachable.
+  const [hiddenApps, setHiddenApps] = useState<Set<string>>(new Set(['explore', 'knowledge', 'file', 'code', 'note', 'extensions']));
+  const [appOrder, setAppOrder] = useState<string[]>(() => dialogAppIconsWithAgents.map(a => a.id));
   const [annotationListOpen, setAnnotationListOpen] = useState(false);
   const [showMigration, setShowMigration] = useState(false);
 
@@ -155,6 +184,10 @@ function CherryStudioInner() {
   }, [tabs, createTabForMenuItem]);
 
   const handleDialogCreateTab = (menuItemId: string) => {
+    // 'agent:<id>' tiles are user-created agent shortcuts — open the
+    // agent tab. (Pre-selecting the specific agent would need extra
+    // plumbing; routing to the agent surface is the design intent.)
+    if (menuItemId.startsWith('agent:')) menuItemId = 'agent';
     setActiveItem(menuItemId);
     const existing = tabs.find(t => t.menuItemId === menuItemId);
     if (existing && !['chat', 'agent'].includes(menuItemId)) {
@@ -349,7 +382,7 @@ function CherryStudioInner() {
           setHiddenApps={setHiddenApps}
           appOrder={appOrder}
           setAppOrder={setAppOrder}
-          dialogAppIcons={dialogAppIcons}
+          dialogAppIcons={dialogAppIconsWithAgents}
           dialogFilterTabs={dialogFilterTabs}
           newTabHistoryItems={newTabHistoryItems}
           newTabFileItems={newTabFileItems}
@@ -395,8 +428,22 @@ export function CherryStudio() {
 
   return (
     <SettingsProvider>
-      <CherryStudioInner />
-      <Toaster position="bottom-right" richColors closeButton />
+      <RecycleBinProvider>
+        <ArchiveProvider>
+          <CherryStudioInner />
+          {/* Radix Dialog sets body { pointer-events: none } while open;
+              Sonner's portal-rendered toast inherits that and becomes
+              visible-but-unclickable. Force pointer-events back on at the
+              container + each toast so undo actions work inside Settings. */}
+          <Toaster
+            position="bottom-right"
+            richColors
+            closeButton
+            className="pointer-events-auto"
+            toastOptions={{ className: 'pointer-events-auto' }}
+          />
+        </ArchiveProvider>
+      </RecycleBinProvider>
     </SettingsProvider>
   );
 }

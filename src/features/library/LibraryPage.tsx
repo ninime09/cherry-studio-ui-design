@@ -14,6 +14,7 @@ import { LibrarySidebar } from './LibrarySidebar';
 import { ResourceGrid } from './ResourceGrid';
 import { ImportModal } from './ImportModal';
 import { SkillPluginImportModal } from './SkillPluginImportModal';
+import { CreateSkillWithAgentDialog } from './CreateSkillWithAgentDialog';
 import { SkillPluginDetail } from './SkillPluginDetail';
 import { AssistantConfig } from '@/features/assistant/AssistantConfig';
 import { AgentConfig } from '@/features/agent/AgentConfig';
@@ -21,6 +22,7 @@ import { useRecycleBin, type RecycleBinItemType } from "@/app/context/RecycleBin
 import { RecycleBinConfirmDialog } from "@/app/components/shared/RecycleBinConfirmDialog";
 import { TemplateBrowsePage } from "./TemplateBrowsePage";
 import { PromptEditPage } from "./PromptEditPage";
+import { AssistantResourcePage } from "./AssistantResourcePage";
 import { buildTags, findFolder } from "./helpers";
 
 // ===========================
@@ -28,7 +30,7 @@ import { buildTags, findFolder } from "./helpers";
 // ===========================
 
 export function LibraryPage() {
-  const { libraryEditResourceId: initialEditResourceId, libraryCreateType: initialCreateType, libraryReturn: onReturn } = useGlobalActions();
+  const { libraryEditResourceId: initialEditResourceId, libraryCreateType: initialCreateType, libraryReturn: onReturn, navigateToMarket } = useGlobalActions();
   const userSkills = useUserSkills();
   const [resources, setResources] = useState<ResourceItem[]>(() => {
     const seed = MOCK_RESOURCES.filter(r => r.type !== 'plugin');
@@ -59,6 +61,7 @@ export function LibraryPage() {
 
   // Skill/Plugin import modal
   const [spImportOpen, setSpImportOpen] = useState(false);
+  const [aiSkillOpen, setAiSkillOpen] = useState(false);
   const [spImportType, setSpImportType] = useState<'skill' | 'plugin'>('skill');
 
   // Tag filter (separate from sidebar filter) — multi-select.
@@ -337,6 +340,11 @@ export function LibraryPage() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* 助手 tab —— 对齐真实产品的资源浏览页（截图风格）。
+            其他类型仍走通用 ResourceGrid。 */}
+        {sidebarFilter.type === 'resource' && sidebarFilter.resourceType === 'assistant' ? (
+          <AssistantResourcePage />
+        ) : (
         <ResourceGrid
           resources={filtered}
           sortKey={sortKey} search={search}
@@ -348,18 +356,25 @@ export function LibraryPage() {
           onAddTag={handleAddTag} onDeleteTag={handleDeleteTag}
           allTagNames={allTagNames} onUpdateResourceTags={handleUpdateResourceTags}
           activeType={activeType} onTypeFilter={setActiveType} typeCounts={typeCounts}
-          onBrowseTemplates={
-            activeResourceType && ['assistant', 'skill'].includes(activeResourceType)
-              ? () => setTemplateBrowse(activeResourceType as 'assistant' | 'skill')
-              : undefined
-          }
+          onBrowseTemplates={navigateToMarket}
+          onCreateSkillWithAgent={() => setAiSkillOpen(true)}
         />
+        )}
       </div>
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
       <SkillPluginImportModal
         open={spImportOpen} importType={spImportType}
         onClose={() => setSpImportOpen(false)} onImportComplete={handleImportComplete}
+      />
+      <CreateSkillWithAgentDialog
+        open={aiSkillOpen}
+        onClose={() => setAiSkillOpen(false)}
+        onComplete={(resource) => {
+          setResources(prev => [resource, ...prev]);
+          setAiSkillOpen(false);
+          setConfigView({ type: 'skill-plugin-detail', resource });
+        }}
       />
 
       {/* Move-to-recycle-bin confirm — iOS-style minimal alert. */}
@@ -416,20 +431,6 @@ export function LibraryPage() {
                     </span>
                   </div>
                 </div>
-                {configView.type === 'skill-plugin-detail' && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleDelete(r)}
-                      aria-label="删除"
-                      title={`删除${cfg.label}`}
-                      className="text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </Button>
-                  </>
-                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"

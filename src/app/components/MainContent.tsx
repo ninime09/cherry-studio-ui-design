@@ -20,7 +20,9 @@ import { FilePage } from '@/features/file/FilePage';
 import { ModelServicePage } from '@/app/components/settings/ModelServicePage';
 import { ExtensionsPage } from '@/features/extensions/ExtensionsPage';
 import { EmptyStatePreview } from '@/features/dev/EmptyStatePreview';
+import { ErrorToastsPreview } from '@/features/dev/ErrorToastsPreview';
 import { CollaborationPage } from '@/features/collaboration/CollaborationPage';
+import { LaunchpadPage } from '@/features/launchpad/LaunchpadPage';
 import { newTabHtmlPreviews } from '@/app/config/constants';
 import { findPinnedArtifact } from '@/app/stores/sharedArtifactsStore';
 
@@ -106,7 +108,9 @@ const TabContent = React.memo(function TabContent({ tab, isActive }: { tab: Tab;
         : menuItemId === 'miniapp' ? <MiniAppsPage />
         : menuItemId === 'extensions' ? <ExtensionsPage />
         : menuItemId === 'collaboration' ? <CollaborationPage />
+        : menuItemId === 'launchpad' ? <LaunchpadPage />
         : menuItemId === 'empty-preview' ? <EmptyStatePreview />
+        : menuItemId === 'error-toast-preview' ? <ErrorToastsPreview />
         : tab.miniAppId ? <MiniAppEmbedPage tab={tab} />
         : tab.htmlPreviewKey ? <HtmlPreviewPage tabKey={tab.htmlPreviewKey} />
         : <GenericPage tab={tab} />
